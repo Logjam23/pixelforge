@@ -300,101 +300,64 @@ class PixelForgeService : Service() {
         engine: Engine,
         message: String
     ) {
-        val completionId = "chatcmpl-pixelforge"
-        val modelName = "gemma-4-e2b"
+        try {
+            val conversation = engine.createConversation()
 
-        call.respond(object : OutgoingContent.WriteChannelContent() {
-            override val contentType = ContentType.parse("text/event-stream")
-            override val status = HttpStatusCode.OK
-
-            override suspend fun writeTo(channel: ByteWriteChannel) {
-                val conversation = engine.createConversation()
-                val partialChannel = Channel<Pair<String, Boolean>>(Channel.UNLIMITED)
-
-                // Run LiteRT-LM streaming on a background thread, bridging
-                // each callback invocation into a coroutine-friendly channel.
-                val inferenceJob = CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        conversation.sendMessageStream(message) { partialResult, done ->
-                            val text = partialResult.contents.contents.joinToString("") {
-                                (it as? Content.Text)?.text ?: ""
-                            }
-                            partialChannel.send(text to done)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Streaming inference error", e)
-                        partialChannel.send((e.message ?: "Unknown error") to true)
-                    }
-                }
-
-                try {
-                    while (true) {
-                        val (text, done) = partialChannel.receive()
-
-                        if (done) {
-                            // Final chunk: empty delta, finish_reason = "stop"
-                            val finalChunk = buildJsonObject {
-                                put("id", completionId)
-                                put("object", "chat.completion.chunk")
-                                put("model", modelName)
-                                putJsonArray("choices") {
-                                    addJsonObject {
-                                        put("index", 0)
-                                        putJsonObject("delta") { }
-                                        put("finish_reason", "stop")
-                                    }
-                                }
-                            }
-                            channel.writeStringUtf8("data: $finalChunk\n\n")
-                            channel.writeStringUtf8("data: [DONE]\n\n")
-                            channel.flush()
-                            break
-                        }
-
-                        // Content chunk: delta with role + content, finish_reason = null
-                        val chunk = buildJsonObject {
-                            put("id", completionId)
-                            put("object", "chat.completion.chunk")
-                            put("model", modelName)
-                            putJsonArray("choices") {
-                                addJsonObject {
-                                    put("index", 0)
-                                    putJsonObject("delta") {
-                                        put("role", "assistant")
-                                        put("content", text)
-                                    }
-                                    put("finish_reason", JsonNull)
-                                }
-                            }
-                        }
-                        channel.writeStringUtf8("data: $chunk\n\n")
-                        channel.flush()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "SSE stream write error", e)
-                    // Best-effort error chunk before closing the stream
-                    try {
-                        val errorChunk = buildJsonObject {
-                            put("id", completionId)
-                            put("object", "chat.completion.chunk")
-                            put("model", modelName)
-                            putJsonArray("choices") {
-                                addJsonObject {
-                                    put("index", 0)
-                                    putJsonObject("delta") { }
-                                    put("finish_reason", "error")
-                                }
-                            }
-                            put("error", e.message ?: "Stream error")
-                        }
-                        channel.writeStringUtf8("data: $errorChunk\n\n")
-                        channel.flush()
-                    } catch (_: Exception) { }
-                } finally {
-                    inferenceJob.cancel()
-                }
+            // Collect full response first (LiteRT-LM SDK is synchronous)
+            // then stream it character-by-character to simulate SSE streaming
+            val response = conversation.sendMessage(message)
+            val fullResponse = response.contents.contents.joinToString("") {
+                (it as? Content.Text)?.text ?: ""
             }
-        })
+
+            // Stream response as SSE
+            call.respondBytesWriter(
+                contentType = ContentType.Text.EventStream
+            ) {
+                // Split response into chunks (word-level for natural streaming feel)
+                val words = fullResponse.split(" ")
+                for ((index, word) in words.withIndex()) {
+                    val chunk = if (index < words.size - 1) "$word " else word
+                    val sseChunk = buildJsonObject {
+                        put("id", "chatcmpl-pixelforge")
+                        put("object", "chat.completion.chunk")
+                        put("model", "gemma-4-e2b")
+                        putJsonArray("choices") {
+                            addJsonObject {
+                                put("index", 0)
+                                putJsonObject("delta") {
+                                    put("role", "assistant")
+                                    put("content", chunk)
+                                }
+                                put("finish_reason", JsonNull)
+                            }
+                        }
+                    }
+                    writeStringUtf8("data: ${sseChunk}\n\n")
+                    flush()
+                }
+
+                // Final done chunk
+                val finalChunk = buildJsonObject {
+                    put("id", "chatcmpl-pixelforge")
+                    put("object", "chat.completion.chunk")
+                    put("model", "gemma-4-e2b")
+                    putJsonArray("choices") {
+                        addJsonObject {
+                            put("index", 0)
+                            putJsonObject("delta") {}
+                            put("finish_reason", "stop")
+                        }
+                    }
+                }
+                writeStringUtf8("data: ${finalChunk}\n\n")
+                writeStringUtf8("data: [DONE]\n\n")
+                flush()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in streaming chat completion", e)
+            // Can't send error SSE if headers already sent -- just log
+        }
     }
 
     // ---------- Network helpers ----------
