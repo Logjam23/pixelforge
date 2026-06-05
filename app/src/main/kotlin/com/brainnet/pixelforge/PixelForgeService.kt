@@ -9,12 +9,27 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Message
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.application.*
+import io.ktor.server.cio.*
+import io.ktor.server.engine.*
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -38,7 +53,8 @@ class PixelForgeService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
-    private var serverProcess: Process? = null
+    private var liteRtEngine: Engine? = null
+    private var ktorServer: ApplicationEngine? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -156,98 +172,112 @@ class PixelForgeService : Service() {
     // ---------- LiteRT-LM server ----------
 
     private fun startLiteRTServer() {
-        Log.d(TAG, "startLiteRTServer: launching…")
-
-        // 1. Verify model file exists
-        val modelFile = File(filesDir, MODEL_FILENAME)
-        if (!modelFile.exists()) {
-            Log.e(TAG, "startLiteRTServer: model file not found at ${modelFile.absolutePath}")
-            updateNotification("Model not found. Please restart.")
-            return
-        }
-
-        // 2. Resolve Tailscale mesh IP
-        val tailscaleIp = resolveTailscaleIp()
-        Log.d(TAG, "startLiteRTServer: resolved bind address = $tailscaleIp")
-
-        // 3. Locate the litert-lm binary
-        //    On Android the LiteRT-LM SDK ships native libs into
-        //    context.applicationInfo.nativeLibraryDir. The binary name below
-        //    assumes the shared-object entry point published by the SDK AAR.
-        //    TODO: verify exact binary name against the LiteRT-LM Android SDK
-        //          AAR contents once the dependency is added to build.gradle.kts.
-        val nativeLibDir = applicationInfo.nativeLibraryDir
-        val binaryPath = "$nativeLibDir/liblitert_lm_main.so"
-        val binary = File(binaryPath)
-        if (!binary.exists() || !binary.canExecute()) {
-            Log.w(TAG, "startLiteRTServer: binary not found or not executable at $binaryPath — attempting anyway")
-        }
-
-        // 4. Launch subprocess
         try {
-            val cmd = listOf(
-                binaryPath,
-                "serve",
-                "--model_path", modelFile.absolutePath,
-                "--host", tailscaleIp,
-                "--port", LITERT_PORT.toString()
+            // 1. Initialize LiteRT-LM engine with Tensor G5 NPU backend
+            val modelPath = "${filesDir}/${MODEL_FILENAME}"
+            val engineConfig = EngineConfig(
+                modelPath = modelPath,
+                backend = Backend.NPU(
+                    nativeLibraryDir = applicationInfo.nativeLibraryDir
+                )
             )
+            liteRtEngine = Engine(engineConfig)
+            liteRtEngine!!.initialize()
+            Log.d(TAG, "LiteRT-LM engine initialized on NPU backend")
 
-            Log.d(TAG, "startLiteRTServer: command = ${cmd.joinToString(" ")}")
+            // 2. Resolve Tailscale IP
+            val tailscaleIp = resolveTailscaleIp()
 
-            val process = ProcessBuilder(cmd)
-                .directory(filesDir)
-                .redirectErrorStream(true)
-                .start()
-
-            serverProcess = process
-
-            // 5. Tail stdout in background coroutine
-            serviceScope.launch(Dispatchers.IO) {
-                try {
-                    process.inputStream.bufferedReader().use { reader ->
-                        reader.lineSequence().forEach { line ->
-                            Log.d(TAG, "litert-lm: $line")
-                        }
-                    }
-                    // Process exited — reader closed naturally
-                    val exitCode = try {
-                        process.exitValue()
-                    } catch (e: IllegalThreadStateException) {
-                        -1 // still running — should not happen here but guard anyway
-                    }
-                    Log.w(TAG, "litert-lm process exited with code $exitCode")
-                    updateNotification("Server stopped unexpectedly. Tap to restart.")
-                } catch (e: Exception) {
-                    Log.e(TAG, "startLiteRTServer: error reading subprocess stdout", e)
+            // 3. Start Ktor embedded server
+            ktorServer = embeddedServer(CIO, host = "0.0.0.0", port = LITERT_PORT) {
+                install(ContentNegotiation) {
+                    json()
                 }
-            }
+                routing {
+                    post("/v1/chat/completions") {
+                        handleChatCompletion(call, liteRtEngine!!)
+                    }
+                    get("/health") {
+                        call.respond(mapOf("status" to "ok"))
+                    }
+                }
+            }.start(wait = false)
 
-            Log.d(TAG, "startLiteRTServer: subprocess launched (pid=${process.pid()})")
-            updateNotification("PixelForge running on $tailscaleIp:${LITERT_PORT}")
+            Log.d(TAG, "Ktor server started on ${tailscaleIp}:${LITERT_PORT}")
+            updateNotification("Server running on ${tailscaleIp}:${LITERT_PORT}")
 
         } catch (e: Exception) {
-            Log.e(TAG, "startLiteRTServer: failed to launch subprocess", e)
-            serverProcess = null
+            Log.e(TAG, "Failed to start LiteRT server", e)
             updateNotification("Server failed to start. Check logs.")
+            liteRtEngine = null
+            ktorServer = null
         }
     }
 
     private fun stopLiteRTServer() {
-        val proc = serverProcess ?: return
-        Log.d(TAG, "stopLiteRTServer: shutting down…")
-
-        proc.destroy()
-        val exited = proc.waitFor(5, TimeUnit.SECONDS)
-
-        if (!exited) {
-            Log.w(TAG, "stopLiteRTServer: process did not exit after 5s — force killing")
-            proc.destroyForcibly()
+        try {
+            ktorServer?.stop(gracePeriodMillis = 1000, timeoutMillis = 3000)
+            ktorServer = null
+            liteRtEngine?.close()
+            liteRtEngine = null
+            Log.d(TAG, "LiteRT-LM server stopped")
+            updateNotification("PixelForge stopped.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping server", e)
         }
+    }
 
-        serverProcess = null
-        updateNotification("PixelForge stopped.")
-        Log.d(TAG, "stopLiteRTServer: done")
+    // ---------- Chat completion handler ----------
+
+    private suspend fun handleChatCompletion(
+        call: ApplicationCall,
+        engine: Engine
+    ) {
+        // Full OpenAI streaming implementation deferred to future task.
+        // Currently parses the last user message and returns a non-streaming response.
+        try {
+            val requestBody = call.receive<JsonObject>()
+            val messages = requestBody["messages"]?.jsonArray
+            val lastUserMessage = messages
+                ?.lastOrNull { it.jsonObject["role"]?.jsonPrimitive?.content == "user" }
+                ?.jsonObject?.get("content")?.jsonPrimitive?.content
+                ?: "Hello"
+
+            val conversation = engine.createConversation()
+            var responseText = ""
+            conversation.sendMessage(
+                Message.newBuilder()
+                    .setRole(Message.Role.USER)
+                    .addContent(Content.newBuilder().setText(lastUserMessage))
+                    .build()
+            ) { chunk ->
+                responseText += chunk.text
+            }
+
+            // Return OpenAI-compatible response shape
+            val response = buildJsonObject {
+                put("id", "chatcmpl-pixelforge")
+                put("object", "chat.completion")
+                put("model", "gemma-4-e2b")
+                putJsonArray("choices") {
+                    addJsonObject {
+                        put("index", 0)
+                        putJsonObject("message") {
+                            put("role", "assistant")
+                            put("content", responseText)
+                        }
+                        put("finish_reason", "stop")
+                    }
+                }
+            }
+            call.respond(response)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling chat completion", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                mapOf("error" to e.message)
+            )
+        }
     }
 
     // ---------- Network helpers ----------

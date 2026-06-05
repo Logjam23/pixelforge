@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.23'
 }
 
 android {
@@ -33,10 +34,19 @@ android {
 }
 
 dependencies {
-    // LiteRT-LM: on-device LLM inference with Tensor G5 NPU backend
-    implementation 'com.google.ai.edge.litert:litert-lm-android:0.1.0-alpha2'
+    // LiteRT-LM Kotlin SDK
+    implementation 'com.google.ai.edge.litert:litert-lm-android:0.1.0-alpha02'
 
-    // Networking
+    // Ktor embedded server (OpenAI-compatible HTTP)
+    implementation 'io.ktor:ktor-server-core:2.3.12'
+    implementation 'io.ktor:ktor-server-cio:2.3.12'
+    implementation 'io.ktor:ktor-server-content-negotiation:2.3.12'
+    implementation 'io.ktor:ktor-serialization-kotlinx-json:2.3.12'
+
+    // Kotlin serialization (for JSON request/response models)
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
+
+    // Networking (model download)
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
     // Coroutines
