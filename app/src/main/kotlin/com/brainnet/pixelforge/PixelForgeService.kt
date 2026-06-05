@@ -116,7 +116,7 @@ class PixelForgeService : Service() {
                 val response = client.newCall(request).execute()
 
                 if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code()}: ${response.message()}")
+                    throw IOException("HTTP ${response.code}: ${response.message}")
                 }
 
                 val body = response.body ?: throw IOException("Empty response body")
@@ -244,14 +244,9 @@ class PixelForgeService : Service() {
                 ?: "Hello"
 
             val conversation = engine.createConversation()
-            var responseText = ""
-            conversation.sendMessage(
-                Message.newBuilder()
-                    .setRole(Message.Role.USER)
-                    .addContent(Content.newBuilder().setText(lastUserMessage))
-                    .build()
-            ) { chunk ->
-                responseText += chunk.text
+            val llmResponse = conversation.sendMessage(lastUserMessage)
+            val responseText = llmResponse.contents.contents.joinToString("") {
+                (it as? Content.Text)?.text ?: ""
             }
 
             // Return OpenAI-compatible response shape
