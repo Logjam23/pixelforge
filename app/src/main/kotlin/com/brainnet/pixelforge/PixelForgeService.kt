@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Engine
@@ -51,6 +52,9 @@ class PixelForgeService : Service() {
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$MODEL_FILENAME"
         private const val MIN_MODEL_SIZE = 100L * 1024 * 1024 // 100MB — guards against partial downloads
         private const val LITERT_PORT = 8080
+
+        const val ACTION_LOG = "com.brainnet.pixelforge.LOG"
+        const val EXTRA_LOG_MESSAGE = "log_message"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -66,6 +70,7 @@ class PixelForgeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("PixelForge starting…"))
+        broadcastLog("PixelForge starting…")
         serviceScope.launch {
             downloadModel()
             // startLiteRTServer() is called by downloadModel() on success to avoid
@@ -86,21 +91,21 @@ class PixelForgeService : Service() {
     // ---------- Model download ----------
 
     private suspend fun downloadModel() {
-        Log.d(TAG, "downloadModel: starting")
+        broadcastLog("downloadModel: starting")
 
         val modelFile = File(filesDir, MODEL_FILENAME)
 
         // 1. Check if model already exists and is valid size (> 100MB guards partials)
         if (modelFile.exists() && modelFile.length() > MIN_MODEL_SIZE) {
-            Log.d(TAG, "downloadModel: model already cached (${modelFile.length()} bytes) — skipping download")
-            updateNotification("Model ready. Starting server...")
+            broadcastLog("downloadModel: model already cached (${modelFile.length()} bytes) — skipping download")
+            broadcastLog("Model ready. Starting server...")
             startLiteRTServer()
             return
         }
 
         // Stale partial — clean it up
         if (modelFile.exists()) {
-            Log.d(TAG, "downloadModel: removing stale partial (${modelFile.length()} bytes)")
+            broadcastLog("downloadModel: removing stale partial (${modelFile.length()} bytes)")
             modelFile.delete()
         }
 
@@ -138,10 +143,10 @@ class PixelForgeService : Service() {
 
                             if (contentLength > 0) {
                                 val percent = ((totalRead * 100) / contentLength).toInt()
-                                // Report every 5% to avoid spamming NotificationManager
+                                // Report every 5% to avoid spamming
                                 if (percent - lastReportedPercent >= 5) {
                                     lastReportedPercent = percent
-                                    updateNotification("Downloading model: $percent%")
+                                    broadcastLog("Downloading model: $percent%")
                                 }
                             }
                         }
@@ -154,20 +159,21 @@ class PixelForgeService : Service() {
             // 3. Atomically rename temp → final only on successful download
             if (!tempFile.renameTo(modelFile)) {
                 Log.w(TAG, "downloadModel: rename failed — leaving temp file in place")
+                broadcastLog("downloadModel: rename failed — leaving temp file in place")
                 throw IOException("Failed to rename temp file to final")
             }
 
-            Log.d(TAG, "downloadModel: complete (${modelFile.length()} bytes)")
+            broadcastLog("downloadModel: complete (${modelFile.length()} bytes)")
 
             // 5. On success
-            updateNotification("Model ready. Starting server...")
+            broadcastLog("Model ready. Starting server...")
             startLiteRTServer()
 
         } catch (e: Exception) {
             Log.e(TAG, "downloadModel: failed", e)
             tempFile.delete() // best-effort cleanup
             // 6. User-visible failure
-            updateNotification("Download failed. Tap to retry.")
+            broadcastLog("Download failed: ${e.message}. Tap to retry.")
         }
     }
 
@@ -185,7 +191,7 @@ class PixelForgeService : Service() {
             )
             liteRtEngine = Engine(engineConfig)
             liteRtEngine!!.initialize()
-            Log.d(TAG, "LiteRT-LM engine initialized on NPU backend")
+            broadcastLog("LiteRT-LM engine initialized on NPU backend")
 
             // 2. Resolve Tailscale IP
             val tailscaleIp = resolveTailscaleIp()
@@ -205,12 +211,11 @@ class PixelForgeService : Service() {
                 }
             }.start(wait = false)
 
-            Log.d(TAG, "Ktor server started on ${tailscaleIp}:${LITERT_PORT}")
-            updateNotification("Server running on ${tailscaleIp}:${LITERT_PORT}")
+            broadcastLog("Ktor server started on ${tailscaleIp}:${LITERT_PORT}")
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start LiteRT server", e)
-            updateNotification("Server failed to start. Check logs.")
+            broadcastLog("Server failed to start: ${e.message}. Check logs.")
             liteRtEngine = null
             ktorServer = null
         }
@@ -222,10 +227,11 @@ class PixelForgeService : Service() {
             ktorServer = null
             liteRtEngine?.close()
             liteRtEngine = null
-            Log.d(TAG, "LiteRT-LM server stopped")
-            updateNotification("PixelForge stopped.")
+            broadcastLog("LiteRT-LM server stopped")
+            broadcastLog("PixelForge stopped.")
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping server", e)
+            broadcastLog("Error stopping server: ${e.message}")
         }
     }
 
@@ -251,6 +257,7 @@ class PixelForgeService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error handling chat completion", e)
+            broadcastLog("Chat completion error: ${e.message}")
             call.respond(
                 HttpStatusCode.InternalServerError,
                 mapOf("error" to e.message)
@@ -413,7 +420,7 @@ class PixelForgeService : Service() {
                     if (inet is Inet4Address) {
                         val host = inet.hostAddress ?: continue
                         if (isTailscale || host.startsWith("100.")) {
-                            Log.d(TAG, "resolveTailscaleIp: found $host on $name")
+                            broadcastLog("resolveTailscaleIp: found $host on $name")
                             return host
                         }
                     }
@@ -421,9 +428,10 @@ class PixelForgeService : Service() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "resolveTailscaleIp: failed to enumerate interfaces", e)
+            broadcastLog("resolveTailscaleIp: failed to enumerate interfaces — ${e.message}")
         }
 
-        Log.d(TAG, "resolveTailscaleIp: no Tailscale IP found — falling back to 0.0.0.0")
+        broadcastLog("resolveTailscaleIp: no Tailscale IP found — falling back to 0.0.0.0")
         return "0.0.0.0"
     }
 
@@ -457,5 +465,19 @@ class PixelForgeService : Service() {
     private fun updateNotification(text: String) {
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    /**
+     * Logs the message via Log.d AND broadcasts it to any registered
+     * LocalBroadcastReceiver (e.g. MainActivity log view). Also updates
+     * the foreground notification so the tray text stays in sync.
+     */
+    private fun broadcastLog(message: String) {
+        Log.d(TAG, message)
+        updateNotification(message)
+        val intent = Intent(ACTION_LOG).apply {
+            putExtra(EXTRA_LOG_MESSAGE, message)
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 }
