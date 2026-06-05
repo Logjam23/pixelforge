@@ -4,7 +4,7 @@
 
 Run Gemma 4 on your Pixel 10's Tensor G5 NPU as a persistent background service. 
 Expose an OpenAI-compatible API endpoint over your Tailscale mesh.
-Drop-in replacement for any local LLM tool that speaks the OpenAI API (Hermes, Open WebUI, etc.).
+Drop-in replacement for any local LLM tool that speaks the OpenAI API (Hermes, Open WebUI, Claude Code, etc.).
 
 ## Why
 
