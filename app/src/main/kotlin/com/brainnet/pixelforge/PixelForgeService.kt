@@ -23,10 +23,12 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -233,8 +235,6 @@ class PixelForgeService : Service() {
         call: ApplicationCall,
         engine: Engine
     ) {
-        // Full OpenAI streaming implementation deferred to future task.
-        // Currently parses the last user message and returns a non-streaming response.
         try {
             val requestBody = call.receive<JsonObject>()
             val messages = requestBody["messages"]?.jsonArray
@@ -242,30 +242,13 @@ class PixelForgeService : Service() {
                 ?.lastOrNull { it.jsonObject["role"]?.jsonPrimitive?.content == "user" }
                 ?.jsonObject?.get("content")?.jsonPrimitive?.content
                 ?: "Hello"
+            val stream = requestBody["stream"]?.jsonPrimitive?.booleanOrNull ?: false
 
-            val conversation = engine.createConversation()
-            val llmResponse = conversation.sendMessage(lastUserMessage)
-            val responseText = llmResponse.contents.contents.joinToString("") {
-                (it as? Content.Text)?.text ?: ""
+            if (stream) {
+                handleStreamingChatCompletion(call, engine, lastUserMessage)
+            } else {
+                handleNonStreamingChatCompletion(call, engine, lastUserMessage)
             }
-
-            // Return OpenAI-compatible response shape
-            val response = buildJsonObject {
-                put("id", "chatcmpl-pixelforge")
-                put("object", "chat.completion")
-                put("model", "gemma-4-e2b")
-                putJsonArray("choices") {
-                    addJsonObject {
-                        put("index", 0)
-                        putJsonObject("message") {
-                            put("role", "assistant")
-                            put("content", responseText)
-                        }
-                        put("finish_reason", "stop")
-                    }
-                }
-            }
-            call.respond(response)
         } catch (e: Exception) {
             Log.e(TAG, "Error handling chat completion", e)
             call.respond(
@@ -273,6 +256,138 @@ class PixelForgeService : Service() {
                 mapOf("error" to e.message)
             )
         }
+    }
+
+    private suspend fun handleNonStreamingChatCompletion(
+        call: ApplicationCall,
+        engine: Engine,
+        message: String
+    ) {
+        val conversation = engine.createConversation()
+        val llmResponse = conversation.sendMessage(message)
+        val responseText = llmResponse.contents.contents.joinToString("") {
+            (it as? Content.Text)?.text ?: ""
+        }
+
+        // Return OpenAI-compatible response shape
+        val response = buildJsonObject {
+            put("id", "chatcmpl-pixelforge")
+            put("object", "chat.completion")
+            put("model", "gemma-4-e2b")
+            putJsonArray("choices") {
+                addJsonObject {
+                    put("index", 0)
+                    putJsonObject("message") {
+                        put("role", "assistant")
+                        put("content", responseText)
+                    }
+                    put("finish_reason", "stop")
+                }
+            }
+        }
+        call.respond(response)
+    }
+
+    private suspend fun handleStreamingChatCompletion(
+        call: ApplicationCall,
+        engine: Engine,
+        message: String
+    ) {
+        val completionId = "chatcmpl-pixelforge"
+        val modelName = "gemma-4-e2b"
+
+        call.respond(object : OutgoingContent.WriteChannelContent() {
+            override val contentType = ContentType.parse("text/event-stream")
+            override val status = HttpStatusCode.OK
+
+            override suspend fun writeTo(channel: ByteWriteChannel) {
+                val conversation = engine.createConversation()
+                val partialChannel = Channel<Pair<String, Boolean>>(Channel.UNLIMITED)
+
+                // Run LiteRT-LM streaming on a background thread, bridging
+                // each callback invocation into a coroutine-friendly channel.
+                val inferenceJob = CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        conversation.sendMessageStream(message) { partialResult, done ->
+                            val text = partialResult.contents.contents.joinToString("") {
+                                (it as? Content.Text)?.text ?: ""
+                            }
+                            partialChannel.send(text to done)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Streaming inference error", e)
+                        partialChannel.send((e.message ?: "Unknown error") to true)
+                    }
+                }
+
+                try {
+                    while (true) {
+                        val (text, done) = partialChannel.receive()
+
+                        if (done) {
+                            // Final chunk: empty delta, finish_reason = "stop"
+                            val finalChunk = buildJsonObject {
+                                put("id", completionId)
+                                put("object", "chat.completion.chunk")
+                                put("model", modelName)
+                                putJsonArray("choices") {
+                                    addJsonObject {
+                                        put("index", 0)
+                                        putJsonObject("delta") { }
+                                        put("finish_reason", "stop")
+                                    }
+                                }
+                            }
+                            channel.writeStringUtf8("data: $finalChunk\n\n")
+                            channel.writeStringUtf8("data: [DONE]\n\n")
+                            channel.flush()
+                            break
+                        }
+
+                        // Content chunk: delta with role + content, finish_reason = null
+                        val chunk = buildJsonObject {
+                            put("id", completionId)
+                            put("object", "chat.completion.chunk")
+                            put("model", modelName)
+                            putJsonArray("choices") {
+                                addJsonObject {
+                                    put("index", 0)
+                                    putJsonObject("delta") {
+                                        put("role", "assistant")
+                                        put("content", text)
+                                    }
+                                    put("finish_reason", JsonNull)
+                                }
+                            }
+                        }
+                        channel.writeStringUtf8("data: $chunk\n\n")
+                        channel.flush()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "SSE stream write error", e)
+                    // Best-effort error chunk before closing the stream
+                    try {
+                        val errorChunk = buildJsonObject {
+                            put("id", completionId)
+                            put("object", "chat.completion.chunk")
+                            put("model", modelName)
+                            putJsonArray("choices") {
+                                addJsonObject {
+                                    put("index", 0)
+                                    putJsonObject("delta") { }
+                                    put("finish_reason", "error")
+                                }
+                            }
+                            put("error", e.message ?: "Stream error")
+                        }
+                        channel.writeStringUtf8("data: $errorChunk\n\n")
+                        channel.flush()
+                    } catch (_: Exception) { }
+                } finally {
+                    inferenceJob.cancel()
+                }
+            }
+        })
     }
 
     // ---------- Network helpers ----------
