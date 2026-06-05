@@ -35,7 +35,7 @@ android {
 
 dependencies {
     // LiteRT-LM Kotlin SDK
-    implementation 'com.google.ai.edge.litert:litert-lm-android:0.1.0-alpha02'
+    implementation 'com.google.ai.edge.litertlm:litertlm-android:latest.release'
 
     // Ktor embedded server (OpenAI-compatible HTTP)
     implementation 'io.ktor:ktor-server-core:2.3.12'
