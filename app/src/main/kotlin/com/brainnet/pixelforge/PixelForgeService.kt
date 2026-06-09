@@ -213,11 +213,15 @@ class PixelForgeService : Service() {
 
             broadcastLog("Ktor server started on ${tailscaleIp}:${LITERT_PORT}")
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Catch Throwable, not just Exception: native NPU backend failures
+            // (e.g. UnsatisfiedLinkError) and OOM are Errors, and would otherwise
+            // kill the process silently with zero log output.
             Log.e(TAG, "Failed to start LiteRT server", e)
-            broadcastLog("Server failed to start: ${e.message}. Check logs.")
+            broadcastLog("[ERROR] Server failed to start: ${e::class.simpleName}: ${e.message}")
             liteRtEngine = null
             ktorServer = null
+            stopSelf()
         }
     }
 
