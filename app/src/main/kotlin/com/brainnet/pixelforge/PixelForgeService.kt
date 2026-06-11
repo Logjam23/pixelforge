@@ -62,8 +62,26 @@ class PixelForgeService : Service() {
     private var liteRtEngine: Engine? = null
     private var ktorServer: ApplicationEngine? = null
 
+    // Persisted log on the app-specific external dir so logs survive a crash
+    // and are readable without ADB (Files app or `adb pull`). No runtime
+    // permission needed for getExternalFilesDir() on Android 10+.
+    private val logFile: File by lazy {
+        val dir = getExternalFilesDir(null) ?: filesDir
+        File(dir, "pixelforge.log")
+    }
+
+    private fun writeToLogFile(line: String) {
+        try {
+            logFile.appendText("$line\n")
+        } catch (e: Throwable) {
+            // silent fail — never let the logger crash the service
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        // Rotate the log file on each fresh start so it does not grow forever
+        try { logFile.delete() } catch (e: Throwable) {}
         createNotificationChannel()
         acquireWakeLock()
     }
@@ -441,6 +459,7 @@ class PixelForgeService : Service() {
      */
     private fun broadcastLog(message: String) {
         Log.d(TAG, message)
+        writeToLogFile(message)
         updateNotification(message)
         val intent = Intent(ACTION_LOG).apply {
             putExtra(EXTRA_LOG_MESSAGE, message)
