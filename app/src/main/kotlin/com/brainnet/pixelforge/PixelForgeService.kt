@@ -47,7 +47,12 @@ class PixelForgeService : Service() {
         private const val TAG = "PixelForgeService"
         const val CHANNEL_ID = "pixelforge_status"
         const val NOTIFICATION_ID = 1
-        const val MODEL_FILENAME = "gemma-4-E2B-it_Google_Tensor_G5.litertlm"
+        // GPU/CPU-compatible model variant. The _Google_Tensor_G5 variant is
+        // NPU-precompiled and cannot run on the GPU backend; the LiteRT NPU
+        // dispatch runtime is also not packageable in a sideloaded APK (see
+        // task pixelforge-018). This generic variant runs on the ML Drift GPU
+        // backend shipped in litertlm-android (libLiteRtClGlAccelerator.so).
+        const val MODEL_FILENAME = "gemma-4-E2B-it.litertlm"
         private const val MODEL_URL =
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$MODEL_FILENAME"
         private const val MIN_MODEL_SIZE = 100L * 1024 * 1024 // 100MB — guards against partial downloads
@@ -199,17 +204,22 @@ class PixelForgeService : Service() {
 
     private fun startLiteRTServer() {
         try {
-            // 1. Initialize LiteRT-LM engine with Tensor G5 NPU backend
+            // 1. Initialize LiteRT-LM engine with the GPU backend.
+            //    NPU (Tensor G5 TPU) was the original target, but the LiteRT
+            //    dispatch runtime that talks to the on-device TPU drivers is
+            //    distributed via Play Feature Delivery / AI Packs and is NOT
+            //    bundled in litertlm-android, nor reliably loadable from a
+            //    sideloaded APK's lib/arm64 (see task pixelforge-018). The GPU
+            //    accelerator (ML Drift, libLiteRtClGlAccelerator.so) IS shipped
+            //    in the AAR, so we use Backend.GPU() as the working fallback.
             val modelPath = "${filesDir}/${MODEL_FILENAME}"
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.NPU(
-                    nativeLibraryDir = applicationInfo.nativeLibraryDir
-                )
+                backend = Backend.GPU()
             )
             liteRtEngine = Engine(engineConfig)
             liteRtEngine!!.initialize()
-            broadcastLog("LiteRT-LM engine initialized on NPU backend")
+            broadcastLog("LiteRT-LM engine initialized on GPU backend")
 
             // 2. Resolve Tailscale IP
             val tailscaleIp = resolveTailscaleIp()
