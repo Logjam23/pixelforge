@@ -47,11 +47,12 @@ class PixelForgeService : Service() {
         private const val TAG = "PixelForgeService"
         const val CHANNEL_ID = "pixelforge_status"
         const val NOTIFICATION_ID = 1
-        // GPU/CPU-compatible model variant. The _Google_Tensor_G5 variant is
-        // NPU-precompiled and cannot run on the GPU backend; the LiteRT NPU
-        // dispatch runtime is also not packageable in a sideloaded APK (see
-        // task pixelforge-018). This generic variant runs on the ML Drift GPU
-        // backend shipped in litertlm-android (libLiteRtClGlAccelerator.so).
+        // Generic CPU/GPU model variant (no hardware suffix). The model
+        // card's Android benchmark table runs BOTH the CPU and GPU backends
+        // on this exact 2583 MB file, so it is the correct model for
+        // Backend.CPU(). The hardware-suffixed variants (_Google_Tensor_G5,
+        // _intel_*, _qualcomm_*) are NPU-precompiled for specific accelerators
+        // and are NOT usable with the CPU/GPU backends. See task pixelforge-019.
         const val MODEL_FILENAME = "gemma-4-E2B-it.litertlm"
         private const val MODEL_URL =
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$MODEL_FILENAME"
@@ -204,22 +205,25 @@ class PixelForgeService : Service() {
 
     private fun startLiteRTServer() {
         try {
-            // 1. Initialize LiteRT-LM engine with the GPU backend.
-            //    NPU (Tensor G5 TPU) was the original target, but the LiteRT
-            //    dispatch runtime that talks to the on-device TPU drivers is
-            //    distributed via Play Feature Delivery / AI Packs and is NOT
-            //    bundled in litertlm-android, nor reliably loadable from a
-            //    sideloaded APK's lib/arm64 (see task pixelforge-018). The GPU
-            //    accelerator (ML Drift, libLiteRtClGlAccelerator.so) IS shipped
-            //    in the AAR, so we use Backend.GPU() as the working fallback.
+            // 1. Initialize LiteRT-LM engine with the CPU backend.
+            //    NPU (Tensor G5 TPU) was the original target, but its dispatch
+            //    runtime is not packageable in a sideloaded APK (pixelforge-018).
+            //    GPU was tried next (pixelforge-018), but the ML Drift GPU
+            //    compiled-model executor fails to initialize on this device at
+            //    runtime (LiteRtLmJniException from
+            //    llm_litert_compiled_model_executor.cc — see pixelforge-019).
+            //    CPU via the XNNPACK delegate is the guaranteed path: the model
+            //    card benchmarks the same generic model on CPU, and correctness
+            //    beats performance here. Revisit GPU once the executor init is
+            //    understood; CPU stays as the proven end-to-end baseline.
             val modelPath = "${filesDir}/${MODEL_FILENAME}"
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.GPU()
+                backend = Backend.CPU()
             )
             liteRtEngine = Engine(engineConfig)
             liteRtEngine!!.initialize()
-            broadcastLog("LiteRT-LM engine initialized on GPU backend")
+            broadcastLog("LiteRT-LM engine initialized on CPU backend")
 
             // 2. Resolve Tailscale IP
             val tailscaleIp = resolveTailscaleIp()
