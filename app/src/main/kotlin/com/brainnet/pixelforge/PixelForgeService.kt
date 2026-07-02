@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.StatFs
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -131,6 +132,19 @@ class PixelForgeService : Service() {
         if (modelFile.exists()) {
             broadcastLog("downloadModel: removing stale partial (${modelFile.length()} bytes)")
             modelFile.delete()
+        }
+
+        // Check available storage space (4.5GB required: 3.95GB model + headroom)
+        val minRequiredSpace = 4500L * 1024 * 1024 // 4.5GB in bytes
+        val statFs = StatFs(filesDir.absolutePath)
+        val availableSpace = statFs.availableBlocksLong * statFs.blockSizeLong
+
+        if (availableSpace < minRequiredSpace) {
+            val availableGb = String.format("%.2f", availableSpace / (1024.0 * 1024 * 1024))
+            val requiredGb = String.format("%.2f", minRequiredSpace / (1024.0 * 1024 * 1024))
+            Log.e(TAG, "downloadModel: insufficient storage (${availableGb}GB available, ${requiredGb}GB required)")
+            broadcastLog("Insufficient storage: ${availableGb}GB available, ${requiredGb}GB required for download")
+            return
         }
 
         val tempFile = File(filesDir, "$MODEL_FILENAME.tmp")

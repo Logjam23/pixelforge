@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PixelForge</string>
+    <string name="google_tensor_runtime_description">Google Tensor G5 TPU runtime libraries for accelerated on-device inference</string>
 </resources>

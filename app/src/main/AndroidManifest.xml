@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <uses-dynamic-feature
+        android:name="google_tensor_runtime"
+        android:description="@string/google_tensor_runtime_description" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

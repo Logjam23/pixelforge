@@ -16,6 +16,10 @@ android {
         versionName '0.1.0'
     }
 
+    dynamicFeatures {
+        add ":litert_npu_runtime_libraries:google_tensor_runtime"
+    }
+
     signingConfigs {
         debug {
             storeFile file("../debug.keystore")
