@@ -219,30 +219,109 @@ class PixelForgeService : Service() {
 
     private fun startLiteRTServer() {
         try {
-            // 1. Initialize LiteRT-LM engine with the CPU backend.
-            //    NPU (Tensor G5 TPU) was the original target, but its dispatch
-            //    runtime is not packageable in a sideloaded APK (pixelforge-018).
-            //    GPU was tried next (pixelforge-018), but the ML Drift GPU
-            //    compiled-model executor fails to initialize on this device at
-            //    runtime (LiteRtLmJniException from
-            //    llm_litert_compiled_model_executor.cc — see pixelforge-019).
-            //    CPU via the XNNPACK delegate is the guaranteed path: the model
-            //    card benchmarks the same generic model on CPU, and correctness
-            //    beats performance here. Revisit GPU once the executor init is
-            //    understood; CPU stays as the proven end-to-end baseline.
             val modelPath = "${filesDir}/${MODEL_FILENAME}"
-            val engineConfig = EngineConfig(
-                modelPath = modelPath,
-                backend = Backend.CPU()
-            )
+
+            // 1. Gate on AICore: check if device supports NPU via AICore package
+            val hasAICore = try {
+                packageManager.getPackageInfo("com.google.android.aicore", 0)
+                broadcastLog("AICore detected — attempting NPU backend")
+                true
+            } catch (e: Exception) {
+                broadcastLog("AICore not detected — skipping NPU backend")
+                false
+            }
+
+            // 2. Load the dispatcher library
+            val nativeLibraryDir = applicationInfo.nativeLibraryDir
+            if (hasAICore) {
+                try {
+                    System.loadLibrary("LiteRtDispatch_GoogleTensor")
+                    broadcastLog("LiteRtDispatch_GoogleTensor loaded from $nativeLibraryDir")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to load dispatcher library", e)
+                    broadcastLog("Warning: dispatcher library load failed — ${e.message}")
+                }
+            }
+
+            // 3-4. Try NPU → GPU → CPU fallback chain with tracking
+            var activeBackendName = "CPU"
+            val engineConfig: EngineConfig = when {
+                hasAICore -> {
+                    try {
+                        // Step 3: Construct NPU backend with nativeLibraryDir
+                        val npuBackend = Backend.NPU(nativeLibraryDir = nativeLibraryDir)
+                        // Step 4: Try NPU
+                        activeBackendName = "NPU"
+                        broadcastLog("Attempting NPU backend initialization...")
+                        EngineConfig(
+                            modelPath = modelPath,
+                            backend = npuBackend,
+                            visionBackend = null,
+                            audioBackend = null
+                        )
+                    } catch (npuError: Throwable) {
+                        Log.w(TAG, "NPU backend failed, trying GPU", npuError)
+                        broadcastLog("NPU failed: ${npuError.message} — trying GPU")
+                        try {
+                            activeBackendName = "GPU"
+                            broadcastLog("Attempting GPU backend initialization...")
+                            EngineConfig(
+                                modelPath = modelPath,
+                                backend = Backend.GPU(),
+                                visionBackend = null,
+                                audioBackend = null
+                            )
+                        } catch (gpuError: Throwable) {
+                            Log.w(TAG, "GPU backend failed, falling back to CPU", gpuError)
+                            broadcastLog("GPU failed: ${gpuError.message} — falling back to CPU")
+                            activeBackendName = "CPU"
+                            EngineConfig(
+                                modelPath = modelPath,
+                                backend = Backend.CPU(),
+                                visionBackend = null,
+                                audioBackend = null
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    // No AICore, try GPU then CPU
+                    try {
+                        activeBackendName = "GPU"
+                        broadcastLog("Attempting GPU backend initialization...")
+                        EngineConfig(
+                            modelPath = modelPath,
+                            backend = Backend.GPU(),
+                            visionBackend = null,
+                            audioBackend = null
+                        )
+                    } catch (gpuError: Throwable) {
+                        Log.w(TAG, "GPU backend failed, falling back to CPU", gpuError)
+                        broadcastLog("GPU failed: ${gpuError.message} — falling back to CPU")
+                        activeBackendName = "CPU"
+                        EngineConfig(
+                            modelPath = modelPath,
+                            backend = Backend.CPU(),
+                            visionBackend = null,
+                            audioBackend = null
+                        )
+                    }
+                }
+            }
+
+            // 5-6. Initialize engine and create conversation
             liteRtEngine = Engine(engineConfig)
             liteRtEngine!!.initialize()
-            broadcastLog("LiteRT-LM engine initialized on CPU backend")
+            broadcastLog("LiteRT-LM engine initialized on $activeBackendName backend")
 
-            // 2. Resolve Tailscale IP
+            // Create initial conversation to validate
+            val testConversation = liteRtEngine!!.createConversation()
+            broadcastLog("LiteRT-LM conversation created successfully — backend active: $activeBackendName")
+
+            // Resolve Tailscale IP
             val tailscaleIp = resolveTailscaleIp()
 
-            // 3. Start Ktor embedded server
+            // Start Ktor embedded server
             ktorServer = embeddedServer(CIO, host = "0.0.0.0", port = LITERT_PORT) {
                 install(ContentNegotiation) {
                     json()
@@ -257,7 +336,7 @@ class PixelForgeService : Service() {
                 }
             }.start(wait = false)
 
-            broadcastLog("Ktor server started on ${tailscaleIp}:${LITERT_PORT}")
+            broadcastLog("Ktor server started on ${tailscaleIp}:${LITERT_PORT} (backend: $activeBackendName)")
 
         } catch (e: Throwable) {
             // Catch Throwable, not just Exception: native NPU backend failures
