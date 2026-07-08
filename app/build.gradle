@@ -1,24 +1,21 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'org.jetbrains.kotlin.plugin.serialization' version '2.2.21'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '2.3.0'
 }
 
 android {
     namespace 'com.brainnet.pixelforge'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.brainnet.pixelforge'
-        minSdk 31
-        targetSdk 35
+        minSdk 26
+        targetSdk 36
         versionCode 2
         versionName '0.1.0'
     }
 
-    dynamicFeatures {
-        add ":litert_npu_runtime_libraries:google_tensor_runtime"
-    }
 
     signingConfigs {
         debug {
@@ -54,11 +51,25 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    ndk {
+        abiFilters += "arm64-v8a"
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts.add("**/libLiteRt.so")
+            pickFirsts.add("**/libLiteRtDispatch_GoogleTensor.so")
+            pickFirsts.add("**/libLiteRtClGlAccelerator.so")
+        }
+    }
 }
 
 dependencies {
     // LiteRT-LM Kotlin SDK
-    implementation 'com.google.ai.edge.litertlm:litertlm-android:latest.release'
+    implementation 'com.google.ai.edge.litertlm:litertlm-android:0.12.0'
+    implementation 'com.google.ai.edge.litert:litert:2.1.5'
 
     // Ktor embedded server (OpenAI-compatible HTTP)
     implementation 'io.ktor:ktor-server-core:2.3.12'
@@ -81,4 +92,8 @@ dependencies {
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
+}
+
+configurations.all {
+    exclude(group: "com.google.ai.edge.litert", module: "litert-api")
 }
