@@ -54,7 +54,7 @@ class PixelForgeService : Service() {
         // Backend.CPU(). The hardware-suffixed variants (_Google_Tensor_G5,
         // _intel_*, _qualcomm_*) are NPU-precompiled for specific accelerators
         // and are NOT usable with the CPU/GPU backends. See task pixelforge-019.
-        const val MODEL_FILENAME = "gemma-4-E2B-it.litertlm"
+        const val MODEL_FILENAME = "gemma-4-E2B-it_Google_Tensor_G5.litertlm"
         private const val MODEL_URL =
             "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$MODEL_FILENAME"
         private const val MIN_MODEL_SIZE = 100L * 1024 * 1024 // 100MB — guards against partial downloads
