@@ -7,9 +7,12 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -40,6 +43,19 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Apply WindowInsets padding to respect system status bar
+        val rootView = findViewById<LinearLayout>(R.id.rootLayout)
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(
+                v.paddingLeft,
+                systemBars.top,
+                v.paddingRight,
+                v.paddingBottom
+            )
+            insets
+        }
 
         statusText = findViewById(R.id.statusText)
         logText = findViewById(R.id.logText)

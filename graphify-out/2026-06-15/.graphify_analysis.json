@@ -1,0 +1,188 @@
+{
+  "communities": {
+    "0": [
+      "app_src_main_kotlin_com_brainnet_pixelforge_mainactivity_kt_string",
+      "appcompatactivity",
+      "bundle",
+      "button",
+      "pixelforge_mainactivity",
+      "pixelforge_mainactivity_mainactivity",
+      "pixelforge_mainactivity_mainactivity_logmessage",
+      "pixelforge_mainactivity_mainactivity_oncreate",
+      "pixelforge_mainactivity_mainactivity_onpause",
+      "pixelforge_mainactivity_mainactivity_onresume",
+      "pixelforge_mainactivity_mainactivity_setstatus",
+      "scrollview",
+      "textview"
+    ],
+    "1": [
+      "applicationengine",
+      "file",
+      "ibinder",
+      "pixelforge_pixelforgeservice",
+      "pixelforge_pixelforgeservice_pixelforgeservice",
+      "pixelforge_pixelforgeservice_pixelforgeservice_acquirewakelock",
+      "pixelforge_pixelforgeservice_pixelforgeservice_createnotificationchannel",
+      "pixelforge_pixelforgeservice_pixelforgeservice_onbind",
+      "pixelforge_pixelforgeservice_pixelforgeservice_oncreate",
+      "pixelforge_pixelforgeservice_pixelforgeservice_ondestroy",
+      "pixelforge_pixelforgeservice_pixelforgeservice_stoplitertserver",
+      "powermanager",
+      "service"
+    ],
+    "2": [
+      "app_src_main_kotlin_com_brainnet_pixelforge_pixelforgeservice_kt_intent",
+      "app_src_main_kotlin_com_brainnet_pixelforge_pixelforgeservice_kt_string",
+      "int",
+      "notification",
+      "pixelforge_pixelforgeservice_pixelforgeservice_broadcastlog",
+      "pixelforge_pixelforgeservice_pixelforgeservice_buildnotification",
+      "pixelforge_pixelforgeservice_pixelforgeservice_downloadmodel",
+      "pixelforge_pixelforgeservice_pixelforgeservice_onstartcommand",
+      "pixelforge_pixelforgeservice_pixelforgeservice_resolvetailscaleip",
+      "pixelforge_pixelforgeservice_pixelforgeservice_startlitertserver",
+      "pixelforge_pixelforgeservice_pixelforgeservice_updatenotification",
+      "pixelforge_pixelforgeservice_pixelforgeservice_writetologfile"
+    ],
+    "3": [
+      "build_workflow",
+      "ic_launcher_hdpi",
+      "ic_launcher_round_hdpi",
+      "readme_brainnet",
+      "readme_foreground_service",
+      "readme_gemma4",
+      "readme_litert_lm",
+      "readme_openai_api",
+      "readme_pixelforge",
+      "readme_pixelforge018",
+      "readme_tailscale",
+      "readme_tensor_g5"
+    ],
+    "4": [
+      "app_src_main_kotlin_com_brainnet_pixelforge_bootreceiver_kt_intent",
+      "broadcastreceiver",
+      "context",
+      "pixelforge_bootreceiver",
+      "pixelforge_bootreceiver_bootreceiver",
+      "pixelforge_bootreceiver_bootreceiver_onreceive"
+    ],
+    "5": [
+      "applicationcall",
+      "engine",
+      "pixelforge_pixelforgeservice_pixelforgeservice_handlechatcompletion",
+      "pixelforge_pixelforgeservice_pixelforgeservice_handlenonstreamingchatcompletion",
+      "pixelforge_pixelforgeservice_pixelforgeservice_handlestreamingchatcompletion"
+    ],
+    "6": [
+      "app_build"
+    ],
+    "7": [
+      "build"
+    ],
+    "8": [
+      "settings"
+    ]
+  },
+  "cohesion": {
+    "0": 0.19230769230769232,
+    "1": 0.19230769230769232,
+    "2": 0.30303030303030304,
+    "3": 0.22727272727272727,
+    "4": 0.3333333333333333,
+    "5": 0.8,
+    "6": 1.0,
+    "7": 1.0,
+    "8": 1.0
+  },
+  "gods": [
+    {
+      "id": "pixelforge_pixelforgeservice_pixelforgeservice",
+      "label": "PixelForgeService",
+      "degree": 23
+    },
+    {
+      "id": "readme_pixelforge",
+      "label": "PixelForge README",
+      "degree": 11
+    },
+    {
+      "id": "pixelforge_mainactivity_mainactivity",
+      "label": "MainActivity",
+      "degree": 10
+    },
+    {
+      "id": "app_src_main_kotlin_com_brainnet_pixelforge_pixelforgeservice_kt_string",
+      "label": "String",
+      "degree": 7
+    },
+    {
+      "id": "engine",
+      "label": "Engine",
+      "degree": 5
+    },
+    {
+      "id": "pixelforge_bootreceiver_bootreceiver",
+      "label": "BootReceiver",
+      "degree": 3
+    },
+    {
+      "id": "app_src_main_kotlin_com_brainnet_pixelforge_pixelforgeservice_kt_intent",
+      "label": "Intent",
+      "degree": 3
+    },
+    {
+      "id": "applicationcall",
+      "label": "ApplicationCall",
+      "degree": 3
+    },
+    {
+      "id": "readme_gemma4",
+      "label": "Gemma 4 E2B Model (litertlm)",
+      "degree": 3
+    },
+    {
+      "id": "readme_openai_api",
+      "label": "OpenAI-Compatible API Endpoint",
+      "degree": 3
+    }
+  ],
+  "surprises": [
+    {
+      "source": "App Launcher Icon (hdpi)",
+      "target": "PixelForge README",
+      "source_files": [
+        "app/src/main/res/mipmap-hdpi/ic_launcher.png",
+        "README.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "references",
+      "why": "inferred connection - not explicitly stated in source; crosses file types (doc \u2194 image); connects across different repos/directories; peripheral node `App Launcher Icon (hdpi)` unexpectedly reaches hub `PixelForge README`"
+    },
+    {
+      "source": "App Launcher Icon Round (hdpi)",
+      "target": "PixelForge README",
+      "source_files": [
+        "app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+        "README.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "references",
+      "why": "inferred connection - not explicitly stated in source; crosses file types (doc \u2194 image); connects across different repos/directories; peripheral node `App Launcher Icon Round (hdpi)` unexpectedly reaches hub `PixelForge README`"
+    },
+    {
+      "source": "GitHub Actions Build Workflow",
+      "target": "PixelForge README",
+      "source_files": [
+        ".github/workflows/build.yml",
+        "README.md"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories; peripheral node `GitHub Actions Build Workflow` unexpectedly reaches hub `PixelForge README`"
+    }
+  ],
+  "tokens": {
+    "input": 2726,
+    "output": 3638
+  }
+}

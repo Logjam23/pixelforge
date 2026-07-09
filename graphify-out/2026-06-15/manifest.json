@@ -1,0 +1,37 @@
+{
+  "app/build.gradle": {
+    "mtime": 1781160835.7193115,
+    "ast_hash": "1a020f7e36405d0649edd7072aa0cd3e",
+    "semantic_hash": "1a020f7e36405d0649edd7072aa0cd3e"
+  },
+  "app/src/main/kotlin/com/brainnet/pixelforge/BootReceiver.kt": {
+    "mtime": 1780645334.4230661,
+    "ast_hash": "189bf657570a7518d7bc775c69f43627",
+    "semantic_hash": "189bf657570a7518d7bc775c69f43627"
+  },
+  "app/src/main/kotlin/com/brainnet/pixelforge/MainActivity.kt": {
+    "mtime": 1780664229.2960317,
+    "ast_hash": "648ec1e21f58df39b32e2c32f1159f58",
+    "semantic_hash": "648ec1e21f58df39b32e2c32f1159f58"
+  },
+  "app/src/main/kotlin/com/brainnet/pixelforge/PixelForgeService.kt": {
+    "mtime": 1781448754.739138,
+    "ast_hash": "1008ace7e1bb72c2146519216b2180b8",
+    "semantic_hash": "1008ace7e1bb72c2146519216b2180b8"
+  },
+  "build.gradle": {
+    "mtime": 1780662677.8940716,
+    "ast_hash": "2b1ae999f1da89d208b16c9c7dd75263",
+    "semantic_hash": "2b1ae999f1da89d208b16c9c7dd75263"
+  },
+  "gradlew": {
+    "mtime": 1780660094.6496105,
+    "ast_hash": "1db6d150e9a9442ca929c1fa8b2fd25e",
+    "semantic_hash": "1db6d150e9a9442ca929c1fa8b2fd25e"
+  },
+  "settings.gradle": {
+    "mtime": 1780662677.887455,
+    "ast_hash": "6331f2122b8ca73cecde9d349ca23de3",
+    "semantic_hash": "6331f2122b8ca73cecde9d349ca23de3"
+  }
+}
