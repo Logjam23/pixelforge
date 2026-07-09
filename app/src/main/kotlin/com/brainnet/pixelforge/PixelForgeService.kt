@@ -68,6 +68,7 @@ class PixelForgeService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var liteRtEngine: Engine? = null
     private var ktorServer: ApplicationEngine? = null
+    private var downloadJob: kotlinx.coroutines.Job? = null
 
     // Persisted log on the app-specific external dir so logs survive a crash
     // and are readable without ADB (Files app or `adb pull`). No runtime
@@ -96,7 +97,9 @@ class PixelForgeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("PixelForge starting…"))
         broadcastLog("PixelForge starting…")
-        serviceScope.launch {
+        
+        downloadJob?.cancel() // Cancel any in-flight download before starting a new one
+        downloadJob = serviceScope.launch {
             downloadModel()
             // startLiteRTServer() is called by downloadModel() on success to avoid
             // the server starting when there's no model to load
@@ -106,6 +109,8 @@ class PixelForgeService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        downloadJob?.cancel()
+        downloadJob = null
         stopLiteRTServer()
         wakeLock?.release()
         serviceScope.cancel()
