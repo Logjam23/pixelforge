@@ -62,6 +62,9 @@ class PixelForgeService : Service() {
 
         const val ACTION_LOG = "com.brainnet.pixelforge.LOG"
         const val EXTRA_LOG_MESSAGE = "log_message"
+
+        const val ACTION_BACKEND_INFO = "com.brainnet.pixelforge.BACKEND_INFO"
+        const val EXTRA_BACKEND_NAME = "backend_name"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -322,6 +325,7 @@ class PixelForgeService : Service() {
             // Create initial conversation to validate
             val testConversation = liteRtEngine!!.createConversation()
             broadcastLog("LiteRT-LM conversation created successfully — backend active: $activeBackendName")
+            broadcastBackendInfo(activeBackendName)
 
             // Resolve Tailscale IP
             val tailscaleIp = resolveTailscaleIp()
@@ -575,6 +579,13 @@ class PixelForgeService : Service() {
         updateNotification(message)
         val intent = Intent(ACTION_LOG).apply {
             putExtra(EXTRA_LOG_MESSAGE, message)
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
+    private fun broadcastBackendInfo(backendName: String) {
+        val intent = Intent(ACTION_BACKEND_INFO).apply {
+            putExtra(EXTRA_BACKEND_NAME, backendName)
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }

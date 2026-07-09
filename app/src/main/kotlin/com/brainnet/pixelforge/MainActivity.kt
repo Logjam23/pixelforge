@@ -23,6 +23,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val ACTION_LOG = "com.brainnet.pixelforge.LOG"
         const val EXTRA_LOG_MESSAGE = "log_message"
+        const val ACTION_BACKEND_INFO = "com.brainnet.pixelforge.BACKEND_INFO"
+        const val EXTRA_BACKEND_NAME = "backend_name"
     }
 
     private lateinit var statusText: TextView
@@ -31,12 +33,23 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
 
+    private var currentStatus: String = "Idle"
+    private var currentBackend: String? = null
+
     private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra(EXTRA_LOG_MESSAGE) ?: return
             logMessage(message)
+        }
+    }
+
+    private val backendReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val backend = intent?.getStringExtra(EXTRA_BACKEND_NAME) ?: return
+            currentBackend = backend
+            updateStatusDisplay()
         }
     }
 
@@ -85,15 +98,39 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         LocalBroadcastManager.getInstance(this)
             .registerReceiver(logReceiver, IntentFilter(ACTION_LOG))
+        LocalBroadcastManager.getInstance(this)
+            .registerReceiver(backendReceiver, IntentFilter(ACTION_BACKEND_INFO))
     }
 
     override fun onPause() {
         super.onPause()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(logReceiver)
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(backendReceiver)
     }
 
     private fun setStatus(text: String) {
-        statusText.text = text
+        currentStatus = text
+        updateStatusDisplay()
+    }
+
+    private fun updateStatusDisplay() {
+        val statusPart = "PixelForge — $currentStatus"
+        val fullText = if (currentBackend != null) {
+            val backendLabel = getBackendLabel(currentBackend!!)
+            "$statusPart  $backendLabel"
+        } else {
+            statusPart
+        }
+        statusText.text = fullText
+    }
+
+    private fun getBackendLabel(backend: String): String {
+        return when (backend) {
+            "NPU" -> "🟢 Tensor G5 (NPU/TPU)"
+            "GPU" -> "🔵 GPU"
+            "CPU" -> "⚪ CPU"
+            else -> ""
+        }
     }
 
     private fun logMessage(message: String) {
