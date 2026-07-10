@@ -67,6 +67,9 @@ class PixelForgeService : Service() {
         const val EXTRA_BACKEND_NAME = "backend_name"
     }
 
+    private var sharedConversation: Any? = null  // Reused across all requests
+    private val inferenceLock = Any()  // Serializes NPU inference calls — single session only
+
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
     private var liteRtEngine: Engine? = null
@@ -322,9 +325,7 @@ class PixelForgeService : Service() {
             liteRtEngine!!.initialize()
             broadcastLog("LiteRT-LM engine initialized on $activeBackendName backend")
 
-            // Create initial conversation to validate
-            val testConversation = liteRtEngine!!.createConversation()
-            broadcastLog("LiteRT-LM conversation created successfully — backend active: $activeBackendName")
+
             broadcastBackendInfo(activeBackendName)
 
             // Resolve Tailscale IP
@@ -408,8 +409,10 @@ class PixelForgeService : Service() {
         engine: Engine,
         message: String
     ) {
-        val conversation = engine.createConversation()
-        val llmResponse = conversation.sendMessage(message)
+        val conversation = synchronized(inferenceLock) {
+            sharedConversation ?: engine.createConversation().also { sharedConversation = it }
+        } as Any
+        val llmResponse = (conversation as com.google.ai.edge.litertlm.Conversation).sendMessage(message)
         val responseText = llmResponse.contents.contents.joinToString("") {
             (it as? Content.Text)?.text ?: ""
         }
@@ -439,11 +442,15 @@ class PixelForgeService : Service() {
         message: String
     ) {
         try {
-            val conversation = engine.createConversation()
+            val conversation = synchronized(inferenceLock) {
+                sharedConversation ?: engine.createConversation().also { sharedConversation = it }
+            } as Any
 
             // Collect full response first (LiteRT-LM SDK is synchronous)
             // then stream it character-by-character to simulate SSE streaming
-            val response = conversation.sendMessage(message)
+            val response = synchronized(inferenceLock) {
+                (conversation as com.google.ai.edge.litertlm.Conversation).sendMessage(message)
+            }
             val fullResponse = response.contents.contents.joinToString("") {
                 (it as? Content.Text)?.text ?: ""
             }
