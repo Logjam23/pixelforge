@@ -38,6 +38,7 @@ Every other Android LLM app is a chat UI.
 - **Model re-downloads on every launch** — model caching not yet implemented; each app start re-fetches the full model (~2.6GB). Tracked as pixelforge-caching-001.
 - **Status bar insets rendering issue** — cosmetic; status bar layout slightly misaligned in some cases. Low priority.
 - **No visual backend indicator** — only backend selection visible in scrolling log; no UI indicator yet. Low priority.
+- **No token counting in API responses** — The `/v1/chat/completions` endpoint does not return a `usage` field (prompt_tokens/completion_tokens/total_tokens). This is a limitation of the underlying LiteRT-LM 0.12.0 library, which does not expose token counting in its API. If you need token counts, estimate them externally (e.g. via a standalone tokenizer) or wait for a future LiteRT-LM release.
 
 ## Current Branch
 
