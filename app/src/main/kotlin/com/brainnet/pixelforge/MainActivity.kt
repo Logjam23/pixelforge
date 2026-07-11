@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_LOG = "com.brainnet.pixelforge.LOG"
         const val EXTRA_LOG_MESSAGE = "log_message"
         const val ACTION_BACKEND_INFO = "com.brainnet.pixelforge.BACKEND_INFO"
+        const val ACTION_SERVER_READY = "com.brainnet.pixelforge.SERVER_READY"
         const val EXTRA_BACKEND_NAME = "backend_name"
     }
 
@@ -50,6 +51,12 @@ class MainActivity : AppCompatActivity() {
             val backend = intent?.getStringExtra(EXTRA_BACKEND_NAME) ?: return
             currentBackend = backend
             updateStatusDisplay()
+        }
+    }
+
+    private val serverReadyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            setStatus("Idle")
         }
     }
 
@@ -100,12 +107,15 @@ class MainActivity : AppCompatActivity() {
             .registerReceiver(logReceiver, IntentFilter(ACTION_LOG))
         LocalBroadcastManager.getInstance(this)
             .registerReceiver(backendReceiver, IntentFilter(ACTION_BACKEND_INFO))
+        LocalBroadcastManager.getInstance(this)
+            .registerReceiver(serverReadyReceiver, IntentFilter(ACTION_SERVER_READY))
     }
 
     override fun onPause() {
         super.onPause()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(logReceiver)
         LocalBroadcastManager.getInstance(this).unregisterReceiver(backendReceiver)
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(serverReadyReceiver)
     }
 
     private fun setStatus(text: String) {

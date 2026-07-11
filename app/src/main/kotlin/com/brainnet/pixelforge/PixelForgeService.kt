@@ -65,6 +65,7 @@ class PixelForgeService : Service() {
 
         const val ACTION_BACKEND_INFO = "com.brainnet.pixelforge.BACKEND_INFO"
         const val EXTRA_BACKEND_NAME = "backend_name"
+        const val ACTION_SERVER_READY = "com.brainnet.pixelforge.SERVER_READY"
     }
 
     private var sharedConversation: Any? = null  // Reused across all requests
@@ -347,6 +348,7 @@ class PixelForgeService : Service() {
             }.start(wait = false)
 
             broadcastLog("Ktor server started on ${tailscaleIp}:${LITERT_PORT} (backend: $activeBackendName)")
+            broadcastServerReady()
 
         } catch (e: Throwable) {
             // Catch Throwable, not just Exception: native NPU backend failures
@@ -417,6 +419,12 @@ class PixelForgeService : Service() {
             (it as? Content.Text)?.text ?: ""
         }
 
+        // NOTE: LiteRT-LM 0.12.0 API does not expose token counting methods.
+        // The Conversation and Response objects do not have methods to retrieve
+        // prompt_tokens or completion_tokens. Real token counts would require
+        // either: (a) a tokenizer library integration, or (b) access to
+        // LiteRT-LM internal engine state (not currently exposed in the public API).
+        // Usage field intentionally omitted to avoid fabricating token counts.
         // Return OpenAI-compatible response shape
         val response = buildJsonObject {
             put("id", "chatcmpl-pixelforge")
@@ -594,6 +602,11 @@ class PixelForgeService : Service() {
         val intent = Intent(ACTION_BACKEND_INFO).apply {
             putExtra(EXTRA_BACKEND_NAME, backendName)
         }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
+    private fun broadcastServerReady() {
+        val intent = Intent(ACTION_SERVER_READY)
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 }
